@@ -1,86 +1,65 @@
-#include <compare>
 #include <iostream>
-#include <atomic>
+#include <cstdlib>
+#include <concepts>
+#include <cassert>
 
-template<class Derived>
-class counter
-{
-	static std::atomic<std::size_t> m_count;
+template<class T>
+struct counter {
+private:
+    static std::size_t cnt;
 public:
-	counter()  { m_count++; }
-	~counter() { m_count--; }
-	static size_t count()
-	{
-		return m_count;
-	}
+    counter() { cnt++; }
+    ~counter() { cnt--; }
+
+    static std::size_t count() { return cnt; }
 };
 
-template<class Derived>
-std::atomic<std::size_t> counter<Derived>::m_count;
+template<class T>
+std::size_t counter<T>::cnt = 0;
 
-template<class Derived>
-struct less_then_comparable
-{
-	auto operator<=>(const Derived& in) const
-	{
-		if (*(static_cast<const Derived*>(this)) < in)
-			return std::weak_ordering::less;
-		else if (in < *(static_cast<const Derived*>(this)))
-			return std::weak_ordering::greater;
-		else
-			return std::weak_ordering::equivalent;
-	}
-
-	bool operator==(const Derived& in) const
-	{
-		return !(*(static_cast<const Derived*>(this)) < in) && !(in < *(static_cast<const Derived*>(this)));
-	}
+template<class T>
+concept LessImplemented = requires(T t1, T t2){
+    { t1 < t2 } -> std::convertible_to<bool>;
 };
 
-struct NamedDouble : public less_then_comparable<NamedDouble>, public counter<NamedDouble>
-{
-	const std::string name;
-	const double value;
-	NamedDouble(std::string name, double value)
-	:	name {name}
-	,	value {value}
-	{}
+template<class T> //requires LessImplemented<T>
+struct less_than_comparable {
+public:
+    // оператор < уже определен
+    // friend bool operator<(const T& lhs, const T& rhs) { return lhs < rhs; }
 
-	bool operator<(const NamedDouble& in) const
-	{
-		return value < in.value;
-	}
+    friend bool operator>(const T &t1, const T &t2) { return t2 < t1; }
+
+    friend bool operator>=(const T &t1, const T &t2) { return !(t1 < t2); }
+
+    friend bool operator<=(const T &t1, const T &t2) { return !(t1 > t2); }
+
+    friend bool operator!=(const T &t1, const T &t2) { return t1 > t2 || t1 < t2; }
+
+    friend bool operator==(const T &t1, const T &t2) { return !(t1 != t2); }
 };
 
+class Number : public less_than_comparable<Number>, public counter<Number> {
+public:
+    Number(int value) : m_value{value} {}
+    int value() const { return m_value; }
+    bool operator<(Number const &other) const { return m_value < other.m_value; }
 
-std::ostream& operator<<(std::ostream& os, const NamedDouble& in)
-{
-	os << "name : \"" + in.name + "\", value : " << in.value;
-	return os;
-}
+private:
+    int m_value;
+};
 
-void test(const NamedDouble& d1, const NamedDouble& d2)
-{
-	std::cout << d1 << '\n' << d2 << std::endl;
+int main() {
+    Number one{1};
+    Number two{2};
+    Number three{3};
+    Number four{4};
 
-	std::cout << "is " + d1.name + " equal to " + d2.name + " : " << (d1 == d2) << std::endl;
-	std::cout << "is " + d1.name + " greater or equal to " + d2.name + " : " << (d1 >= d2) << std::endl;
-	std::cout << "is " + d1.name + " less or equal to " + d2.name + " : " << (d1 <= d2) << std::endl;
-	std::cout << "is " + d1.name + " not equal to " + d2.name + " : " << (d1 != d2) << std::endl;
-
-	std::cout << "Number of instances of NamedDouble : " << counter<NamedDouble>::count() << std::endl;
-}
-
-int main()
-{
-	NamedDouble d1 ("first", 1.5);
-	std::cout << "Number of instances of NamedDouble : " << counter<NamedDouble>::count() << std::endl;
-	NamedDouble d2 ("second", 2.5);
-	std::cout << "Number of instances of NamedDouble : " << counter<NamedDouble>::count() << std::endl;
-
-	test(NamedDouble("first", 1.5), NamedDouble("second", 2.5));
-	test(NamedDouble("first", 1.5), NamedDouble("second", 1.5));
-	test(NamedDouble("first", 2.5), NamedDouble("second", 1.5));
-
-	std::cout << "Number of instances of NamedDouble : " << counter<NamedDouble>::count() << std::endl;
+    assert(one >= one);
+    assert(three <= four);
+    assert(two == two);
+    assert(three > two);
+    assert(one < two);
+    std::cout << "Count: " << counter<Number>::count() << std::endl;
+    return 0;
 }
