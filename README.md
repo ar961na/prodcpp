@@ -1132,23 +1132,230 @@ int main() {
 
 ## <a id="q68">68. Как работает ключевое слово required? Когда проверятся ограничения?</a>
 
+**requires** используется для определения концептов и накладывания ограничений на шаблоны. Проверка требований происходит на этапе компиляции.
+
 ## <a id="q69">69. Чем плохи SFINAE ограничения? Приведите пример.</a>
+
+SFINAE (Substitution Failure Is Not An Error) может привести к сложным и запутанным сообщениям об ошибках компиляции. Также сложность кода возрастает, что затрудняет его поддержку.
+
+```
+template <typename T>
+auto func(T t) -> decltype(t.foo()) {
+    return t.foo();
+}
+
+struct A {
+    void foo() {}
+};
+
+struct B {};
+
+int main() {
+    A a;
+    B b;
+    func(a); // Компилируется
+    func(b); // Ошибка компиляции
+}
+```
 
 ## <a id="q70">70. Что такое requires-expression? Отличия required-expression от required-clause</a>
 
+**requires-expression** — это выражение, которое проверяет наличие определенных свойств или методов у типа.
+```
+template <typename T>
+concept HasFoo = requires(T t) {
+    { t.foo() } -> std::convertible_to<void>;
+};
+```
+
+**requires-clause** — это условие, накладываемое на шаблонные параметры с использованием концептов.
+```
+template <typename T>
+requires HasFoo<T>
+void callFoo(T t) {
+    t.foo();
+}
+```
+
+Отличия:
+- **requires-expression** проверяет валидность кода.
+- **requires-clause** вычисляются на этапе компиляции.
+
 ## <a id="q71">71. Виды requires-expression</a>
+- простые (simple) ограничения - являются истинным, если выражение валидно;
+- ограничения типа (type) - являются истинными, если выражение - существующий тип;
+- составные (compound) ограничения - являются комбинацией простого ограничения и ограничения типа, проверяют совместимость типа с выражением;
+- вложенные (nested) ограничения - содержат **requires-clause**.
+
+```
+requires(T t, U u) {
+	u + t;				// простое ограничение
+	typename T::inner;	// ограничение типа
+}
+```
 
 ## <a id="q72">72. Что такое концепт? Особенности синтаксиса ограничения функций концептами</a>
 
+Концепты позволяют создать аббревиатуру для **requires-expression** и по своей сути похожи на **constexpr bool**.
+```
+template <class From, class To>
+concept convertible_to = std::is_convertible_v<From, To> && requires(From(&f)()) { static_cast<To>(f()); };
+```
+
+```
+template <typename T>
+concept Incrementable = requires(T t) {
+    t++;
+};
+
+template <Incrementable T>
+void increment(T& t) {
+    t++;
+}
+```
+
 ## <a id="q73">73. Отношения между концептами</a>
+Концепты могут быть зависимыми и составными. Один концепт может зависеть от другого концепта.
+```
+template <typename T>
+concept Incrementable = requires(T t) {
+    t++;
+};
+
+template <typename T>
+concept Decrementable = requires(T t) {
+    t--;
+};
+
+template <typename T>
+concept Arithmetic = Incrementable<T> && Decrementable<T>;
+```
 
 ## <a id="q74">74. Напишите концепт Hashable, принимающий одну шаблонную переменную T, который будет использоваться для проверки: существования типа std::hash<T>, существования std::hash<T>::operator() и приводимости типа возвращаемого значения std::hash<T>::operator() к std::size_t</a>
+```
+#include <functional>
+#include <type_traits>
+
+template <typename T>
+concept Hashable = requires(T a) {
+    { std::hash<T>{}(a) } -> std::convertible_to<std::size_t>;
+};
+```
 
 ## <a id="q75">75. Универсальные ссылки и идеальная передача</a>
+Универсальные ссылки (universal references) — это ссылки, которые могут быть как lvalue, так и rvalue. Универсальные ссылки возникают при использовании T&& в шаблонах.
+
+```
+template <class T>
+void foo(T&& x) {};
+
+int main() {
+	foo(5);		// T = int, decltype(x) = int&&
+	int x = 5;
+	foo(x);		// T = int&, decltype(x) = int&
+	return 0;
+}
+```
+
+Идеальная передача (perfect forwarding) — это техника, позволяющая передавать аргументы функции таким образом, чтобы сохранять их rvalue или lvalue состояние.
+
+```
+struct A {
+	A() { std::cout << "default constructor" << std::endl; }
+	A(const A&) { std::cout << "copy constructor" << std::endl; }
+	A(A&&) { std::cout << "move constructor" << std::endl; }
+};
+
+int foo(A, A) { return 0; }
+
+template <class F, class T1, class T2>
+auto wrapper(F f, T1&& x, T2&& y)
+{
+	return f(std::forward<T1>(x), std::forward<T2>(y));
+}
+
+int main() {
+	wrapper(foo, A{}, A{});
+	return 0;
+}
+```
+
+Сворачивание ссылок: («Одиночный амперсанд всегда побеждает»)
+* & + & -> &
+* & + && -> &
+* && + & -> &
+* && + && -> &&
 
 ## <a id="q76">76. Функции std::move и std::forward</a>
+- **std::move**: Преобразует **lvalue** в **rvalue**.
+  ```
+  template <class T>
+  std::remove_reference_t<T>&& move(T&& p) noexcept
+  {
+      return static_cast<std::remove_reference_t<T>&&>(p);
+  }
+  ```
+- **std::forward**: возвращает (**lvalue** или **rvalue**) в зависимости от типа шаблонного параметра.
+  ```
+  template <typename T>
+  T&& forward(std::remove_reference_t<T>& t) noexcept
+  {
+  	  return static_cast<T&&>(t);
+  }
+  ```
 
 ## <a id="q77">77. Пачки параметров. Как выделить паттерн раскрытия? Что такое свертки?</a>
+Шаблон может принимать неопределенное количество аргументов
+```
+template <class... ARGS>
+void f(ARGS... args);
+
+int main() {
+	f();			// пустая пачка
+	f(42);			// int
+	f(42, 4.2);		// int, double
+}
+```
+Узнать размер пачки можно при помощи вызова sizeof...(ARGS) или sizeof...(args).
+
+Параметры в пачке можно «раскрыть» согласно паттерну раскрытия:
+```
+// g(int x, double y);
+
+template <class... ARGS>
+void g(ARGS... args) {
+	f(args...);					// f(x, y)
+	f(&args...);				// f(&x, &y)
+	f(h(args)...);				// f(h(x), h(y))
+	f(const_cast<const ARGS*>(&args)...);		// f(const_cast<const int*>(&x), const_cast<const double*>(&y))
+}
+```
+
+Свертки (fold expressions) — это механизм C++17 для применения бинарного оператора ко всем элементам пачки параметров.
+
+| Паттерн свертки | Результат свертки |
+|-----------------|-------------------|
+|... op pack|(...(p1 op p2) op p3)...) op pN)|
+|init op ... op pack|(...(init op p2) op p3)...) op pN)|
+|pack op ...|(p1 op (p2 op (...(pN-1 op pN)...)|
+|pack op ... op fini|(p1 op (p2 op (...(pN-1 op fini)...)|
+
+```
+template <class... ARGS>
+auto sumAll(ARGS&&... args) { return (std::forward<ARGS>(args) + ...); }
+
+template <class... ARGS>
+auto printAll(ARGS&&... args) { (std::cout << ... << args) << std::endl; }
+```
+
+Свертки с пустыми пачками:
+```
+template <class... ARGS>
+auto andAll(ARGS&&... args) { return (... && args); }
+
+auto x = sumAll(); 	// ошибка компиляции оператор + не поддерживает пустые свертки
+auto y = andAll();	// ОК: оператор && поддерживает пустые свертки
+```
 
 ## <a id="q78">78. Паттерн Декоратор.</a>
 
